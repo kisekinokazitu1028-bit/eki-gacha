@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>鉄道駅ガチャ - 進行方向・番線案内</title>
+    <style>
+        :root {
+            --primary-color: #007bff;
+            --accent-color: #d32f2f;
+            --bg-color: #f0f2f5;
+            --text-main: #333;
+        }
+        
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
+            background: var(--bg-color); 
+            display: flex; 
+            justify-content: center; 
+            align-items: flex-start; /* スマホで上詰めに */
+            min-height: 100vh; 
+            margin: 0; 
+            padding: 20px 15px;
+            box-sizing: border-box;
+        }
+
+        .card { 
+            background: white; 
+            padding: 25px; 
+            border-radius: 20px; 
+            box-shadow: 0 8px 25px rgba(0,0,0,0.08); 
+            width: 100%; 
+            max-width: 450px; 
+            text-align: center; 
+        }
+
+        h1 { font-size: 1.5rem; color: var(--text-main); margin-bottom: 20px; }
+        
+        input { 
+            width: 100%; 
+            padding: 15px; 
+            border: 2px solid #ddd; 
+            border-radius: 12px; 
+            font-size: 16px; /* iPhoneで自動ズームさせないためのサイズ */
+            box-sizing: border-box; 
+            margin-bottom: 15px;
+            -webkit-appearance: none; /* iOSの影を消す */
+        }
+
+        button { 
+            width: 100%; 
+            padding: 16px; 
+            background: var(--primary-color); 
+            color: white; 
+            border: none; 
+            border-radius: 12px; 
+            font-size: 1.1rem; 
+            font-weight: bold; 
+            cursor: pointer;
+            box-shadow: 0 4px 0 #0056b3;
+            active: transform: translateY(2px);
+            active: box-shadow: 0 2px 0 #0056b3;
+        }
+
+        #result { 
+            margin-top: 25px; 
+            padding: 20px; 
+            border-radius: 15px; 
+            background: #fafafa; 
+            border: 1px solid #eee; 
+            display: none; 
+            position: relative;
+        }
+
+        /* 路線名バッジ */
+        .line-badge { 
+            display: inline-block; 
+            padding: 5px 15px; 
+            background: #444; 
+            color: white; 
+            border-radius: 6px; 
+            font-size: 0.85rem; 
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .direction-label { font-size: 0.8rem; color: #777; margin-bottom: 5px; }
+
+        /* 番線表示を鉄道看板風に */
+        .platform-box {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 10px 0;
+        }
+        .platform-num { 
+            font-size: 1.4rem; 
+            font-weight: 900; 
+            background: #333; 
+            color: #ffeb3b; 
+            padding: 5px 15px; 
+            border-radius: 4px;
+            margin-right: 8px;
+        }
+
+        .dest-label { font-size: 0.85rem; color: #888; margin-top: 20px; border-top: 1px dashed #ccc; padding-top: 15px; }
+        
+        /* 行き先駅名を大きく、見やすく */
+        .dest-station { 
+            font-size: 2.8rem; 
+            font-weight: 800; 
+            color: var(--accent-color); 
+            margin: 10px 0;
+            letter-spacing: -1px;
+        }
+
+        .footer-msg { font-size: 0.8rem; color: #999; margin-top: 5px; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h1>🚉 駅ガチャ</h1>
+    <input type="text" id="startInput" placeholder="今の駅を入力 (例: 大宮)" enterkeyhint="search">
+    <button onclick="drawLottery()">ガチャを回す！</button>
+
+    <div id="result">
+        <div id="lineBadge" class="line-badge"></div>
+        <div class="direction-label" id="dirLabel"></div>
+        
+        <div class="platform-box">
+            <span id="platformNum" class="platform-num"></span>
+            <span style="font-weight: bold;">番線へ</span>
+        </div>
+
+        <div class="dest-label">目的地は...</div>
+        <div id="destStation" class="dest-station"></div>
+        <div class="footer-msg">に決定！気をつけていってらっしゃい 👋</div>
+    </div>
+</div>
+
+<script>
+let masterData = [];
+
+// CSV読み込み (前回のロジックと同じ)
+window.onload = async () => {
+    try {
+        const response = await fetch('data.csv');
+        const text = await response.text();
+        const rows = text.replace(/\r/g, '').split('\n').slice(1);
+        masterData = rows.filter(row => row.trim() !== "").map(row => {
+            const columns = row.split(',');
+            return {
+                line: columns[0].trim(),
+                name: columns[1].trim(),
+                seq: parseInt(columns[2]),
+                down_pf: columns[3] ? columns[3].trim() : "不明",
+                up_pf: columns[4] ? columns[4].trim() : "不明"
+            };
+        });
+    } catch (e) {
+        alert("data.csvが見つかりません。サーバー上で実行してください。");
+    }
+};
+
+function drawLottery() {
+    const startValue = document.getElementById('startInput').value.trim();
+    const resultArea = document.getElementById('result');
+
+    if (!startValue) return;
+
+    const availablePositions = masterData.filter(d => d.name === startValue);
+    if (availablePositions.length === 0) {
+        alert("駅名が見つかりません。");
+        return;
+    }
+
+    const currentInfo = availablePositions[Math.floor(Math.random() * availablePositions.length)];
+    const allStationsInLine = masterData.filter(d => d.line === currentInfo.line);
+
+    const downPool = allStationsInLine.filter(d => d.seq > currentInfo.seq);
+    const upPool = allStationsInLine.filter(d => d.seq < currentInfo.seq);
+
+    let directions = [];
+    if (downPool.length > 0) directions.push({ label: "下り・外回り方面", pool: downPool, pf: currentInfo.down_pf });
+    if (upPool.length > 0) directions.push({ label: "上り・内回り方面", pool: upPool, pf: currentInfo.up_pf });
+
+    if (directions.length === 0) {
+        alert("この路線の終点です。");
+        return;
+    }
+
+    const selectedDir = directions[Math.floor(Math.random() * directions.length)];
+    const destination = selectedDir.pool[Math.floor(Math.random() * selectedDir.pool.length)];
+
+    // 表示反映
+    resultArea.style.display = 'block';
+    document.getElementById('lineBadge').innerText = currentInfo.line;
+    document.getElementById('dirLabel').innerText = selectedDir.label;
+    document.getElementById('platformNum').innerText = selectedDir.pf;
+    document.getElementById('destStation').innerText = destination.name;
+    
+    // スマホで結果までスクロール
+    resultArea.scrollIntoView({ behavior: 'smooth' });
+}
+</script>
+
+</body>
+</html>
