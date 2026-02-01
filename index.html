@@ -4,11 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <title>鉄道駅ガチャ - 路線ロゴ・カラー対応版</title>
+    <title>鉄道駅ガチャ - ネットワーク対応版</title>
     <style>
         :root {
             --primary-color: #007bff;
-            --accent-color: #d32f2f;
             --bg-color: #f0f2f5;
             --text-main: #333;
         }
@@ -29,7 +28,7 @@
             background: white; 
             padding: 25px; 
             border-radius: 20px; 
-            box-shadow: 0 8px 25px rgba(0,0,0,0.08); 
+            box-shadow: 0 8px 25px rgba(0,0,0,0.1); 
             width: 100%; 
             max-width: 450px; 
             text-align: center; 
@@ -45,8 +44,9 @@
             font-size: 16px; 
             box-sizing: border-box; 
             margin-bottom: 15px;
-            -webkit-appearance: none;
+            outline: none;
         }
+        input:focus { border-color: var(--primary-color); }
 
         button { 
             width: 100%; 
@@ -59,31 +59,32 @@
             font-weight: bold; 
             cursor: pointer;
             box-shadow: 0 4px 0 #0056b3;
+            transition: all 0.1s;
         }
         button:active { transform: translateY(2px); box-shadow: 0 2px 0 #0056b3; }
 
         #result { 
             margin-top: 25px; 
-            padding: 20px; 
+            padding: 25px 20px; 
             border-radius: 15px; 
-            background: #fafafa; 
+            background: #fff; 
             border: 1px solid #eee; 
             display: none; 
-            position: relative;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.02);
         }
 
-        /* 路線ロゴ（JA, JSなど） */
+        /* 路線ロゴ（JA, JTなど） */
         .line-logo {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            width: 50px;
-            height: 50px;
-            border: 5px solid #333;
-            border-radius: 10px;
-            font-size: 1.5rem;
+            width: 55px;
+            height: 55px;
+            border: 6px solid #333;
+            border-radius: 12px;
+            font-size: 1.6rem;
             font-weight: 900;
-            margin-bottom: 10px;
+            margin-bottom: 15px;
             background: white;
             color: #333;
         }
@@ -101,7 +102,7 @@
             width: fit-content;
         }
 
-        .direction-label { font-size: 0.8rem; color: #777; margin-bottom: 5px; }
+        .direction-label { font-size: 0.85rem; color: #666; margin-bottom: 5px; }
 
         .platform-box {
             display: flex;
@@ -110,33 +111,33 @@
             margin: 10px 0;
         }
         .platform-num { 
-            font-size: 1.4rem; 
+            font-size: 1.6rem; 
             font-weight: 900; 
             background: #333; 
             color: #ffeb3b; 
             padding: 5px 15px; 
-            border-radius: 4px;
-            margin-right: 8px;
+            border-radius: 6px;
+            margin-right: 10px;
         }
 
-        .dest-label { font-size: 0.85rem; color: #888; margin-top: 20px; border-top: 1px dashed #ccc; padding-top: 15px; }
+        .dest-label { font-size: 0.9rem; color: #888; margin-top: 25px; border-top: 1px dashed #ddd; padding-top: 20px; }
         
         .dest-station { 
-            font-size: 2.8rem; 
-            font-weight: 800; 
+            font-size: 3rem; 
+            font-weight: 900; 
             margin: 10px 0;
             letter-spacing: -1px;
         }
 
-        .footer-msg { font-size: 0.8rem; color: #999; margin-top: 5px; }
+        .footer-msg { font-size: 0.8rem; color: #999; margin-top: 10px; }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <h1>🚉 駅ガチャ</h1>
+    <h1>🚉 鉄道駅ガチャ</h1>
     <input type="text" id="startInput" placeholder="今の駅を入力 (例: 大宮)" enterkeyhint="search">
-    <button onclick="drawLottery()">ガチャを回す！</button>
+    <button id="drawBtn">ガチャを回す！</button>
 
     <div id="result">
         <div id="lineLogo" class="line-logo"></div>
@@ -145,7 +146,7 @@
         
         <div class="platform-box">
             <span id="platformNum" class="platform-num"></span>
-            <span style="font-weight: bold;">番線へ</span>
+            <span style="font-weight: bold; font-size: 1.1rem;">番線へ</span>
         </div>
 
         <div class="dest-label">目的地は...</div>
@@ -157,47 +158,60 @@
 <script>
 let masterData = [];
 
-// CSV読み込み
-window.onload = async () => {
+// 1. CSVデータの読み込み
+async function loadData() {
     try {
+        // GitHub Pagesなどで動かすため相対パスで指定
         const response = await fetch('data.csv');
+        if (!response.ok) throw new Error('CSVファイルが見つかりません');
+        
         const text = await response.text();
-        const rows = text.replace(/\r/g, '').split('\n').slice(1);
-        masterData = rows.filter(row => row.trim() !== "").map(row => {
+        // 改行コード(CRLF/LF)対応と空行除去
+        const rows = text.trim().split(/\r?\n/).slice(1); 
+
+        masterData = rows.map(row => {
             const columns = row.split(',');
+            if (columns.length < 3) return null;
             return {
                 line: columns[0].trim(),
                 name: columns[1].trim(),
                 seq: parseInt(columns[2]),
-                down_pf: columns[3] ? columns[3].trim() : "不明",
-                up_pf: columns[4] ? columns[4].trim() : "不明",
-                color: columns[5] ? columns[5].trim() : "#444444", // 6列目：色
-                code: columns[6] ? columns[6].trim() : ""        // 7列目：記号
+                down_pf: columns[3] ? columns[3].trim() : "-",
+                up_pf: columns[4] ? columns[4].trim() : "-",
+                color: (columns[5] && columns[5].trim()) ? columns[5].trim() : "#444444",
+                code: (columns[6] && columns[6].trim()) ? columns[6].trim() : "-"
             };
-        });
+        }).filter(d => d !== null);
+        
+        console.log("読み込み完了:", masterData.length, "件");
     } catch (e) {
-        console.error(e);
-        alert("data.csvの読み込みに失敗しました。");
+        console.error("エラー:", e);
+        alert("データの読み込みに失敗しました。data.csvが同フォルダにあるか確認してください。");
     }
-};
+}
 
+// 2. ガチャ実行
 function drawLottery() {
     const startValue = document.getElementById('startInput').value.trim();
     const resultArea = document.getElementById('result');
 
-    if (!startValue) return;
-
-    // 現在の駅がデータにあるか確認
-    const availablePositions = masterData.filter(d => d.name === startValue);
-    if (availablePositions.length === 0) {
-        alert("駅名が見つかりません。");
+    if (!startValue) {
+        alert("駅名を入力してください。");
         return;
     }
 
-    // 複数の路線がある場合はランダムに選択（乗り換え対応）
+    // 入力駅の検索
+    const availablePositions = masterData.filter(d => d.name === startValue);
+    if (availablePositions.length === 0) {
+        alert("駅名「" + startValue + "」が見つかりません。リストにある駅を入力してください。");
+        return;
+    }
+
+    // 複数路線ある場合はランダムで1つ選択
     const currentInfo = availablePositions[Math.floor(Math.random() * availablePositions.length)];
     const allStationsInLine = masterData.filter(d => d.line === currentInfo.line);
 
+    // 下りと上りのプールを作成
     const downPool = allStationsInLine.filter(d => d.seq > currentInfo.seq);
     const upPool = allStationsInLine.filter(d => d.seq < currentInfo.seq);
 
@@ -206,16 +220,55 @@ function drawLottery() {
     if (upPool.length > 0) directions.push({ label: "上り・内回り方面", pool: upPool, pf: currentInfo.up_pf });
 
     if (directions.length === 0) {
-        alert("この路線の終点です。他の駅を入力してください。");
+        alert("この路線の終点駅です。他の駅を入力してください。");
         return;
     }
 
-    // 方向を決め、その中から目的地をランダム決定
+    // 方向を決定
     const selectedDir = directions[Math.floor(Math.random() * directions.length)];
+    // 目的地を決定
     const destination = selectedDir.pool[Math.floor(Math.random() * selectedDir.pool.length)];
 
     // --- 表示の更新 ---
     resultArea.style.display = 'block';
 
-    // 1. 路線ロゴ (JA, JSなど)
+    // 路線ロゴ (JA, JSなど)
     const logo = document.getElementById('lineLogo');
+    if (destination.code !== "-") {
+        logo.textContent = destination.code;
+        logo.style.display = 'inline-flex';
+        logo.style.borderColor = destination.color;
+    } else {
+        logo.style.display = 'none';
+    }
+
+    // 路線名バッジ
+    const badge = document.getElementById('lineBadge');
+    badge.textContent = destination.line;
+    badge.style.backgroundColor = destination.color;
+
+    // 方向・番線
+    document.getElementById('dirLabel').textContent = selectedDir.label;
+    document.getElementById('platformNum').textContent = selectedDir.pf;
+
+    // 目的地
+    const destElem = document.getElementById('destStation');
+    destElem.textContent = destination.name;
+    destElem.style.color = destination.color;
+
+    // スマホのキーボードを閉じる
+    document.activeElement.blur();
+}
+
+// 起動時にデータをロード
+loadData();
+
+// イベントリスナー
+document.getElementById('drawBtn').addEventListener('click', drawLottery);
+document.getElementById('startInput').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') drawLottery();
+});
+</script>
+
+</body>
+</html>
